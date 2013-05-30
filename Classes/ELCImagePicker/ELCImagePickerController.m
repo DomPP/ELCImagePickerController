@@ -20,6 +20,9 @@
 @property (nonatomic, retain) NSMutableArray *videoQueue;
 @property (nonatomic, retain) NSMutableArray *processedAssets;
 @property (nonatomic, assign) NSInteger processCount;
+@property (nonatomic, assign) NSInteger processTotal;
+
+@property (nonatomic, retain) UIProgressView *progessView;
 @end
 @implementation ELCImagePickerController
 
@@ -67,6 +70,7 @@ processedAssets = _processedAssets;
         }
     }
     self.processCount =  self.imageQueue.count + self.videoQueue.count;
+    self.processTotal = self.processCount-1;
     self.processedAssets = [NSMutableArray arrayWithCapacity:self.processCount];
     [self startProcessing];
     
@@ -78,8 +82,16 @@ processedAssets = _processedAssets;
 #pragma mark - handle processing events
 //checks if all assets have been processed and notifies delegate if everything is done
 -(void)assetProcessed{
+//    NSLog(@"<processed asset> asset count:%d",self.processCount);
+//    NSLog(@"total:%d count:%d",_processTotal, _processCount);
+    CGFloat progress = (CGFloat)(_processTotal - _processCount) / _processTotal;
+    [self.progessView setProgress:progress animated:YES];
+    
     if (self.processCount > 0)
         return;
+    
+    NSLog(@"<finished processing>");
+    [self hideProgressView];
     
     if(_myDelegate != nil && [_myDelegate respondsToSelector:@selector(elcImagePickerController:didFinishPickingMediaWithInfo:)]) {
 		[_myDelegate performSelector:@selector(elcImagePickerController:didFinishPickingMediaWithInfo:) withObject:self withObject:[NSArray arrayWithArray:self.processedAssets]];
@@ -90,18 +102,29 @@ processedAssets = _processedAssets;
 
 //starts processing on queues once the assets have been sorted
 -(void)startProcessing{
+//    NSLog(@"<started processing> asset count:%d", self.processCount);
+    dispatch_queue_t backgroundQueue = dispatch_queue_create("com.razeware.imagegrabber.bgqueue", NULL);
+//    dispatch_queue_t defaultQueue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
+    [self showProgressView];
+    
     for (ALAsset *asset in self.imageQueue) {
         NSURL *url = [[asset valueForProperty:ALAssetPropertyURLs] valueForKey:[[[asset valueForProperty:ALAssetPropertyURLs] allKeys] objectAtIndex:0]];
         url = [NSURL fileURLWithPath:[self tmpPathForAssetURL:url]];
-        [self processAsset:asset withURL:url];
+//            [self processAsset:asset withURL:url];
+        dispatch_async(backgroundQueue, ^(void) {
+            [self processAsset:asset withURL:url];
+        });
+
     }
     
     for (ALAsset *asset in self.videoQueue) {
-        [self videoAssetToTempFile:asset];
+//            [self videoAssetToTempFile:asset];
+        dispatch_async(backgroundQueue, ^(void) {
+            [self videoAssetToTempFile:asset];
+        });
+        
     }
 }
-
-
 
 //pulls out relevant info from the asset object
 -(void)processAsset:(ALAsset*)asset withURL:(NSURL*)fileURL{
@@ -133,7 +156,10 @@ processedAssets = _processedAssets;
     self.processCount--;
     [self.processedAssets addObject:workingDictionary];
     [workingDictionary release];
-    [self assetProcessed];
+    dispatch_sync(dispatch_get_main_queue(), ^{
+        [self assetProcessed];
+    });
+    
 }
 
 #pragma mark - helper functions
@@ -144,6 +170,48 @@ processedAssets = _processedAssets;
     NSString * filename = [NSString stringWithFormat: @"%f.%@",ti,ext];
     NSString * tmpfile = [NSTemporaryDirectory() stringByAppendingPathComponent:filename];
     return tmpfile;
+}
+
+-(void)showProgressView{
+    //build parent view
+    UIView *parentView = [[UIView alloc] initWithFrame:CGRectMake(0,
+                                                                  CGRectGetHeight(self.view.frame) - 50,
+                                                                  CGRectGetWidth(self.view.frame),
+                                                                  50)];
+    parentView.backgroundColor = [UIColor colorWithRed:0 green:0 blue:0 alpha:.8];
+    
+
+    //build progress view
+    self.progessView = [[UIProgressView alloc] initWithProgressViewStyle:UIProgressViewStyleBar];
+    self.progessView.frame = CGRectMake(0,
+                                        CGRectGetHeight(parentView.frame) - CGRectGetHeight(_progessView.frame),
+                                        CGRectGetWidth(self.view.frame),
+                                        CGRectGetHeight(_progessView.frame));
+
+    //build label
+    UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(0,
+                                                               0,
+                                                               CGRectGetWidth(self.view.frame),
+                                                               CGRectGetHeight(parentView.frame) - CGRectGetHeight(_progessView.frame))];
+    label.text = @"Getting media from library";
+    label.textColor = [UIColor whiteColor];
+    label.backgroundColor = [UIColor clearColor];
+    label.textAlignment = NSTextAlignmentCenter;
+    
+    //add subviews
+    [parentView addSubview:self.progessView];
+    [parentView addSubview:label];
+    [self.view addSubview:parentView];
+    
+    //clean up
+    [label release];
+    [parentView release];
+    [_progessView release];
+}
+
+-(void)hideProgressView{
+    [self.progessView.superview removeFromSuperview];
+    self.progessView = nil;
 }
 
 #pragma mark - copy video data out of photo album
@@ -180,7 +248,7 @@ processedAssets = _processedAssets;
         NSUInteger size = [rep size];
         const int bufferSize = 8192;
         
-        NSLog(@"Writing to %@",tmpfile);
+//        NSLog(@"Writing to %@",tmpfile);
         FILE* f = fopen([tmpfile cStringUsingEncoding:1], "wb+");
         if (f == NULL) {
             NSLog(@"Can not create tmp file.");
