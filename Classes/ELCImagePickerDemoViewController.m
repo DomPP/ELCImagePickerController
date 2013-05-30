@@ -106,6 +106,7 @@
 
 - (void)elcImagePickerController:(ELCImagePickerController *)picker didFinishPickingMediaWithInfo:(NSArray *)info
 {
+    NSLog(@"<delegate started>");
     if ([self respondsToSelector:@selector(dismissViewControllerAnimated:completion:)]){
         [self dismissViewControllerAnimated:YES completion:nil];
     } else {
@@ -121,14 +122,17 @@
     
     NSMutableArray *images = [NSMutableArray arrayWithCapacity:[info count]];
 	
+    NSLog(@"Pulling images");
+    NSInteger count = 0;
 	for(NSDictionary *dict in info) {
+        NSLog(@"Created image view: %d",count++);
         NSString *type = [dict objectForKey:UIImagePickerControllerMediaType];
 
         if ([type isEqualToString:ALAssetTypeVideo]) {
             self.videoURL = [dict objectForKey:UIImagePickerControllerReferenceURL];
-            NSLog(@"video path:%@",self.videoURL);
+//            NSLog(@"video path:%@",self.videoURL);
         }else{
-            NSLog(@"Image Url:%@",[dict objectForKey:UIImagePickerControllerReferenceURL]);
+//            NSLog(@"Image Url:%@",[dict objectForKey:UIImagePickerControllerReferenceURL]);
         }
                 
         UIImage *image = [dict objectForKey:UIImagePickerControllerOriginalImage];
