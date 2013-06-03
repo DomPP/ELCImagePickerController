@@ -87,24 +87,30 @@ processedAssets = _processedAssets;
     CGFloat progress = (CGFloat)(_processTotal - _processCount) / _processTotal;
     [self.progessView setProgress:progress animated:YES];
     
-    if (self.processCount > 0)
-        return;
     
     NSLog(@"<finished processing>");
-    [self hideProgressView];
     
     if(_myDelegate != nil && [_myDelegate respondsToSelector:@selector(elcImagePickerController:didFinishPickingMediaWithInfo:)]) {
 		[_myDelegate performSelector:@selector(elcImagePickerController:didFinishPickingMediaWithInfo:) withObject:self withObject:[NSArray arrayWithArray:self.processedAssets]];
 	} else {
-        [self popToRootViewControllerAnimated:NO];
+//        [self popToRootViewControllerAnimated:NO];
+        [self dismissViewControllerAnimated:YES completion:nil];
+    }
+    
+    if (self.processCount == 0){
+        [self hideProgressView];
+        [self dismissViewControllerAnimated:YES completion:nil];
     }
 }
 
 //starts processing on queues once the assets have been sorted
 -(void)startProcessing{
-//    NSLog(@"<started processing> asset count:%d", self.processCount);
+    if (_processCount == 0) {
+        [self dismissViewControllerAnimated:YES completion:nil];
+        return;
+    }
+    
     dispatch_queue_t backgroundQueue = dispatch_queue_create("com.razeware.imagegrabber.bgqueue", NULL);
-//    dispatch_queue_t defaultQueue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
     [self showProgressView];
     
     for (ALAsset *asset in self.imageQueue) {
@@ -154,6 +160,7 @@ processedAssets = _processedAssets;
 //        [self.imageQueue removeObject:asset];
 //    }
     self.processCount--;
+    [self.processedAssets removeAllObjects];
     [self.processedAssets addObject:workingDictionary];
     [workingDictionary release];
     dispatch_sync(dispatch_get_main_queue(), ^{
@@ -175,16 +182,21 @@ processedAssets = _processedAssets;
 -(void)showProgressView{
     //build parent view
     UIView *parentView = [[UIView alloc] initWithFrame:CGRectMake(0,
-                                                                  CGRectGetHeight(self.view.frame) - 50,
+                                                                  0,
                                                                   CGRectGetWidth(self.view.frame),
-                                                                  50)];
+                                                                  CGRectGetHeight(self.view.frame))];
     parentView.backgroundColor = [UIColor colorWithRed:0 green:0 blue:0 alpha:.8];
     
 
+    //build activty indicator
+    UIActivityIndicatorView *activityView = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleWhiteLarge];
+    activityView.center = parentView.center;
+    [activityView startAnimating];
+    
     //build progress view
     self.progessView = [[UIProgressView alloc] initWithProgressViewStyle:UIProgressViewStyleBar];
     self.progessView.frame = CGRectMake(0,
-                                        CGRectGetHeight(parentView.frame) - CGRectGetHeight(_progessView.frame),
+                                        CGRectGetMaxY(activityView.frame)+16,
                                         CGRectGetWidth(self.view.frame),
                                         CGRectGetHeight(_progessView.frame));
 
@@ -192,21 +204,24 @@ processedAssets = _processedAssets;
     UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(0,
                                                                0,
                                                                CGRectGetWidth(self.view.frame),
-                                                               CGRectGetHeight(parentView.frame) - CGRectGetHeight(_progessView.frame))];
+                                                               50)];
     label.text = @"Getting media from library";
     label.textColor = [UIColor whiteColor];
+    [label setFont:[UIFont fontWithName:label.font.fontName size:20 ]];
     label.backgroundColor = [UIColor clearColor];
     label.textAlignment = NSTextAlignmentCenter;
     
     //add subviews
     [parentView addSubview:self.progessView];
     [parentView addSubview:label];
+    [parentView addSubview:activityView];
     [self.view addSubview:parentView];
     
     //clean up
     [label release];
     [parentView release];
     [_progessView release];
+    [activityView release];
 }
 
 -(void)hideProgressView{
